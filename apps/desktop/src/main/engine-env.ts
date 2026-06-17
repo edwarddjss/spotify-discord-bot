@@ -1,4 +1,4 @@
-import { toEngineEnv, type EngineCredentials } from '@greenroom/shared';
+import { toEngineEnv, type AudioDeviceSettings, type EngineCredentials } from '@greenroom/shared';
 import { dataDir, ffmpegPath, modelPath } from './paths';
 import { getStoreKey, loadAudioSettings } from './vault';
 
@@ -8,9 +8,10 @@ import { getStoreKey, loadAudioSettings } from './vault';
  * fails with EAI_FAIL) and then layer our injected credentials/config on top.
  * ELECTRON_RUN_AS_NODE is stripped so the child behaves as plain Node.
  */
-export function buildEngineEnv(creds: EngineCredentials): Record<string, string> {
+export function buildEngineEnv(creds: EngineCredentials, resolvedAudio?: AudioDeviceSettings): Record<string, string> {
   const env: Record<string, string> = {};
-  const audio = loadAudioSettings();
+  const saved = loadAudioSettings();
+  const audio = resolvedAudio ?? saved;
   const runtimeOptions = {
     dataDir: dataDir(),
     ffmpegPath: ffmpegPath(),

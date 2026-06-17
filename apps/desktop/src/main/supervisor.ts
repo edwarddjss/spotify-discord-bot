@@ -13,6 +13,7 @@ import { HEALTH_MARKER } from '@greenroom/engine/health';
 import { engineEntry } from './paths';
 import { loadCreds } from './vault';
 import { buildEngineEnv } from './engine-env';
+import { getAudioDeviceReport } from './audio-devices';
 import { restoreSpotifyOutputFromDesktop } from './audio-routing';
 
 interface SupervisorCallbacks {
@@ -95,7 +96,8 @@ export class Supervisor {
     const creds = parsed.data;
     this.redactList = [creds.discordToken, creds.spotifyClientSecret].filter(Boolean);
 
-    const env = buildEngineEnv(creds);
+    const audioReport = await getAudioDeviceReport();
+    const env = buildEngineEnv(creds, audioReport.settings);
 
     const child = utilityProcess.fork(engineEntry(), [], { stdio: 'pipe', env });
     this.child = child;

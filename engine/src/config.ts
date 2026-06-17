@@ -35,6 +35,10 @@ export interface GreenroomConfig {
   port: number;
   audioPlatform: 'windows' | 'linux';
   audioDevice: string;
+  /** Windows playback endpoint Spotify is routed to while streaming (CABLE Input). */
+  spotifyOutputDevice: string;
+  /** Windows endpoint Spotify returns to after streaming (Speakers/headphones). */
+  spotifyRestoreDevice: string;
   spotifyTargetDeviceName: string;
   /** Absolute path (or PATH name) of the FFmpeg binary; bundled in production. */
   ffmpegPath: string;
@@ -74,6 +78,16 @@ export const config: GreenroomConfig = {
   port: Number.parseInt(process.env.PORT ?? '8888', 10),
   audioPlatform: platform === 'windows' ? 'windows' : 'linux',
   audioDevice: process.env.AUDIO_DEVICE ?? 'CABLE Output (VB-Audio Virtual Cable)',
+  spotifyOutputDevice:
+    process.env.GREENROOM_SPOTIFY_OUTPUT_DEVICE ??
+    process.env.SPOTICORD_SPOTIFY_OUTPUT_DEVICE ??
+    process.env.SONICORD_SPOTIFY_OUTPUT_DEVICE ??
+    '',
+  spotifyRestoreDevice:
+    process.env.GREENROOM_SPOTIFY_RESTORE_DEVICE ??
+    process.env.SPOTICORD_SPOTIFY_RESTORE_DEVICE ??
+    process.env.SONICORD_SPOTIFY_RESTORE_DEVICE ??
+    '',
   spotifyTargetDeviceName: process.env.SPOTIFY_TARGET_DEVICE_NAME ?? '',
   ffmpegPath: process.env.FFMPEG_PATH ?? 'ffmpeg',
   storeKey: process.env.GREENROOM_STORE_KEY ?? process.env.SPOTICORD_STORE_KEY ?? process.env.SONICORD_STORE_KEY ?? null,

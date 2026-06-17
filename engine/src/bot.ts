@@ -168,11 +168,12 @@ client.on('interactionCreate', (interaction) => {
             if (device) targetDeviceName = device.name;
             await startDiscordCapture(userId);
           } catch (err) {
-            console.warn('[Bot] Auto-resume failed (voice still active):', (err as Error).message);
+            console.warn('[Bot] Voice streaming setup failed:', (err as Error).message);
             playError = (err as Error).message;
+            voiceSession.cleanup();
           }
           const replyContent = playError
-            ? `Connected to **${voiceChannel.name}**. (Ensure Spotify is running and active on your host PC!)`
+            ? `Could not stream audio: ${playError}`
             : `Connected to **${voiceChannel.name}**. Spotify auto-resumed on **${targetDeviceName}**.`;
           const reply = await cmd.editReply(replyContent);
           refreshPlaybackPresence();

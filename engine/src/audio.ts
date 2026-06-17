@@ -7,6 +7,8 @@ import { normalizeFfmpegCaptureDevice } from './audio-device-names.js';
 import type { AudioEffects } from './types.js';
 
 const DEFAULT_EFFECTS: AudioEffects = { bassboost: false, speed: 1.0 };
+const CAPTURE_READY_TIMEOUT_MS = 8_000;
+const CAPTURE_MIN_PEAK = 500;
 const FFMPEG_ERROR_PATTERN = /\b(error|failed|cannot|invalid|unavailable|not found|no such|permission denied|access denied)\b/i;
 
 export interface CaptureHandle {
@@ -111,24 +113,41 @@ class AudioCaptureEngine {
       const passThrough = new PassThrough();
       newProcess.stdout.pipe(passThrough);
 
-      const readyPromise = new Promise<void>((resolve) => {
+      const readyPromise = new Promise<void>((resolve, reject) => {
         let resolved = false;
-        const doResolve = (): void => {
+        let peak = 0;
+        const finish = (err?: Error): void => {
           if (resolved) return;
           resolved = true;
-          resolve();
+          if (err) reject(err);
+          else resolve();
         };
-        passThrough.once('data', () => {
-          console.log('[AudioEngine] Capture stream is producing audio.');
-          emitHealth('ffmpeg_ready', { device });
-          doResolve();
+        passThrough.on('data', (chunk: Buffer) => {
+          for (let i = 0; i + 1 < chunk.length; i += 2) {
+            const sample = Math.abs(chunk.readInt16LE(i));
+            if (sample > peak) peak = sample;
+          }
+          if (peak >= CAPTURE_MIN_PEAK) {
+            console.log(`[AudioEngine] Capture stream is producing audio (peak=${peak}).`);
+            emitHealth('ffmpeg_ready', { device });
+            finish();
+          }
         });
         setTimeout(() => {
-          if (!resolved) {
-            console.warn('[AudioEngine] Safety timeout reached before first audio chunk.');
-            doResolve();
+          if (resolved) return;
+          if (peak >= CAPTURE_MIN_PEAK) {
+            console.log(`[AudioEngine] Capture stream is producing audio (peak=${peak}).`);
+            emitHealth('ffmpeg_ready', { device });
+            finish();
+            return;
           }
-        }, 5000);
+          finish(
+            new Error(
+              `No audio detected on "${device}" after ${CAPTURE_READY_TIMEOUT_MS / 1000}s. ` +
+                'Make sure Spotify is playing, Windows routed it to CABLE Input, and nothing else is using CABLE Output.',
+            ),
+          );
+        }, CAPTURE_READY_TIMEOUT_MS);
       });
 
       this.ffmpegProcess = newProcess;

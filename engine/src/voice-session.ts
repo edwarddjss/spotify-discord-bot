@@ -14,6 +14,7 @@ import type { AudioCaptureEngine, CaptureHandle } from './audio.js';
 import type { SpotifyController } from './spotify.js';
 import type { AudioEffects } from './types.js';
 import type { GreenroomConfig } from './config.js';
+import type { AudioRouterOptions } from './windows-audio-router.js';
 import { restoreSpotifyOutput, routeSpotifyToCapture } from './windows-audio-router.js';
 
 export interface VoiceSessionDeps {
@@ -133,18 +134,27 @@ export class VoiceSessionManager {
     this.cleanupInProgress = false;
   }
 
+  private routerOptions(): AudioRouterOptions {
+    const options: AudioRouterOptions = { dataDir: this.config.dataDir };
+    if (this.config.spotifyOutputDevice) options.routeDeviceName = this.config.spotifyOutputDevice;
+    if (this.config.spotifyRestoreDevice) options.restoreDeviceName = this.config.spotifyRestoreDevice;
+    return options;
+  }
+
   async routeSpotifyAudio(captureDeviceName = this.config.audioDevice, force = false): Promise<void> {
     if (this.spotifyAudioRouted && !force) return;
     if (this.spotifyRouteInFlight) return this.spotifyRouteInFlight;
 
     this.spotifyRouteInFlight = (async () => {
-      const route = await routeSpotifyToCapture(captureDeviceName, { dataDir: this.config.dataDir });
+      const route = await routeSpotifyToCapture(captureDeviceName, this.routerOptions());
       if (route.ok) {
         if (!route.skipped) this.spotifyAudioRouted = true;
         console.log(`[AudioRouting] ${route.message}`);
-      } else {
-        console.warn(`[AudioRouting] Could not route Spotify automatically: ${route.message}`);
+        return;
       }
+      const message = route.message || 'Windows could not route Spotify to the virtual cable.';
+      console.warn(`[AudioRouting] Could not route Spotify automatically: ${message}`);
+      if (force) throw new Error(message);
     })();
 
     try {
@@ -161,7 +171,7 @@ export class VoiceSessionManager {
 
     this.spotifyAudioRouted = false;
     this.spotifyRestoreInFlight = (async () => {
-      const result = await restoreSpotifyOutput(this.config.audioDevice, { dataDir: this.config.dataDir });
+      const result = await restoreSpotifyOutput(this.config.audioDevice, this.routerOptions());
       if (result.ok) console.log(`[AudioRouting] ${result.message}`);
       else console.warn(`[AudioRouting] Could not restore Spotify audio: ${result.message}`);
     })();
