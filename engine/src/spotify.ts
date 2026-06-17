@@ -259,12 +259,46 @@ export class SpotifyController extends EventEmitter {
     if (!response.ok) {
       throw new Error(`Spotify token refresh error: ${response.status} - ${await response.text()}`);
     }
-    const data = (await response.json()) as TokenResponse;
+    const text = await response.text();
+    let data: TokenResponse;
+    try {
+      data = JSON.parse(text) as TokenResponse;
+    } catch {
+      throw new Error(
+        `Spotify token refresh returned a non-JSON response. Run /login in Discord to relink Spotify. Body starts with: ${text.slice(0, 80)}`,
+      );
+    }
     profile.accessToken = data.access_token;
     profile.expiresAt = Date.now() + data.expires_in * 1000;
     if (data.refresh_token) profile.refreshToken = data.refresh_token;
     this.saveCredentials();
     console.log(`[Spotify] Token refreshed for ${discordUserId}`);
+  }
+
+  private async readSpotifyResponse<T>(response: Awaited<ReturnType<typeof fetch>>, context: string): Promise<T | null> {
+    if (response.status === 204) return null;
+    const text = await response.text();
+    if (!response.ok) {
+      let parsed = text;
+      try {
+        const json = JSON.parse(text) as { error?: { message?: string } };
+        parsed = json.error?.message ?? text;
+      } catch {
+        // not JSON
+      }
+      throw new Error(`Spotify Web API ${context} failed (${response.status}): ${parsed.slice(0, 240)}`);
+    }
+    if (!text.trim()) return null;
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      const hint = /^[A-Za-z0-9+/=]{8,}$/.test(text.trim())
+        ? ' The response looked like corrupted credentials — run /login in Discord to relink Spotify.'
+        : '';
+      throw new Error(
+        `Spotify Web API ${context} returned a non-JSON response (HTTP ${response.status}).${hint} Body starts with: ${text.slice(0, 80)}`,
+      );
+    }
   }
 
   async request<T = unknown>(discordUserId: string, endpoint: string, method: HttpMethod = 'GET', body: unknown = null): Promise<T | null> {
@@ -283,19 +317,7 @@ export class SpotifyController extends EventEmitter {
       await new Promise((resolve) => setTimeout(resolve, retryAfter * 1000));
       response = await fetch(url, options);
     }
-    if (response.status === 204) return null;
-    if (!response.ok) {
-      const errText = await response.text();
-      let parsed = errText;
-      try {
-        const json = JSON.parse(errText) as { error?: { message?: string } };
-        parsed = json.error?.message ?? errText;
-      } catch {
-        // not JSON
-      }
-      throw new Error(`Spotify Web API status ${response.status}: ${parsed}`);
-    }
-    return (await response.json()) as T;
+    return this.readSpotifyResponse<T>(response, `${method} ${endpoint}`);
   }
 
   async getDevices(discordUserId: string): Promise<SpotifyDevice[]> {
@@ -321,7 +343,8 @@ export class SpotifyController extends EventEmitter {
   async play(discordUserId: string, deviceId: string | null = null): Promise<PlayResult> {
     const deviceParam = deviceId ? `?device_id=${deviceId}` : '';
     try {
-      await this.request(discordUserId, `/me/player/play${deviceParam}`, 'PUT', {});
+      // Resume playback with no body — Spotify rejects `{}` and may return a non-JSON error.
+      await this.request(discordUserId, `/me/player/play${deviceParam}`, 'PUT');
       return { success: true, message: 'Spotify resumed. Ensure Spotify is active on your host client.' };
     } catch (error) {
       if ((error as Error).message.includes('Restriction violated')) {
@@ -340,26 +363,31 @@ export class SpotifyController extends EventEmitter {
    * briefly, then play on the same device.
    */
   async resumeOnRoutedDevice(discordUserId: string, deviceId: string | null = null): Promise<PlayResult> {
-    if (deviceId) {
-      await this.transferPlayback(discordUserId, deviceId, true);
-      await new Promise((resolve) => setTimeout(resolve, 250));
-      try {
-        await this.pause(discordUserId, deviceId);
-        await new Promise((resolve) => setTimeout(resolve, 350));
-      } catch (err) {
-        console.warn('[AudioRouting] Could not pause Spotify to rebind its output device:', (err as Error).message);
+    try {
+      if (deviceId) {
+        await this.transferPlayback(discordUserId, deviceId, true);
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        try {
+          await this.pause(discordUserId, deviceId);
+          await new Promise((resolve) => setTimeout(resolve, 350));
+        } catch (err) {
+          console.warn('[AudioRouting] Could not pause Spotify to rebind its output device:', (err as Error).message);
+        }
+        return await this.play(discordUserId, deviceId);
       }
-      return this.play(discordUserId, deviceId);
-    }
 
-    const state = await this.getPlaybackState(discordUserId).catch(() => null);
-    if (state?.isPlaying) {
-      await this.pause(discordUserId).catch((err) => {
-        console.warn('[AudioRouting] Could not pause Spotify to rebind its output device:', (err as Error).message);
-      });
-      await new Promise((resolve) => setTimeout(resolve, 350));
+      const state = await this.getPlaybackState(discordUserId).catch(() => null);
+      if (state?.isPlaying) {
+        await this.pause(discordUserId).catch((err) => {
+          console.warn('[AudioRouting] Could not pause Spotify to rebind its output device:', (err as Error).message);
+        });
+        await new Promise((resolve) => setTimeout(resolve, 350));
+      }
+      return await this.play(discordUserId);
+    } catch (err) {
+      console.warn('[AudioRouting] Spotify playback control failed after routing (continuing with capture):', (err as Error).message);
+      return { success: true, message: 'Windows audio routed; Spotify playback control skipped.' };
     }
-    return this.play(discordUserId);
   }
 
   async searchAndPlay(discordUserId: string, query: string): Promise<PlayResult> {

@@ -87,7 +87,7 @@ async function replyEphemeral(cmd: ChatInputCommandInteraction, content: string)
   await cmd.reply({ content, flags: MessageFlags.Ephemeral });
 }
 
-/** Join voice, route Spotify to the virtual cable, and rebind playback onto that output. */
+/** Join voice and route Spotify to the virtual cable. Playback control is best-effort. */
 async function prepareVoiceStreaming(
   member: NonNullable<ChatInputCommandInteraction<'cached'>['member']>,
   guild: ChatInputCommandInteraction<'cached'>['guild'],
@@ -95,8 +95,12 @@ async function prepareVoiceStreaming(
 ): Promise<void> {
   await voiceSession.ensureVoiceConnection(member, guild, spotifyUserId, false);
   await voiceSession.routeSpotifyAudioForUser(spotifyUserId);
-  const device = await spotify.findTargetDevice(spotifyUserId);
-  await spotify.resumeOnRoutedDevice(spotifyUserId, device?.id ?? null);
+  try {
+    const device = await spotify.findTargetDevice(spotifyUserId);
+    await spotify.resumeOnRoutedDevice(spotifyUserId, device?.id ?? null);
+  } catch (err) {
+    console.warn('[Bot] Spotify playback control failed (continuing with capture):', (err as Error).message);
+  }
 }
 
 async function startDiscordCapture(spotifyUserId: string): Promise<void> {
