@@ -1,9 +1,8 @@
 import type { AudioRouteResult } from '@greenroom/engine/windows-audio-router';
 import { restoreSpotifyOutput, routeSpotifyToCapture } from '@greenroom/engine/windows-audio-router';
+import { DEFAULT_CAPTURE_DEVICE } from '@greenroom/shared';
 import { dataDir } from './paths';
 import { loadAudioSettings } from './vault';
-
-const DEFAULT_CAPTURE_DEVICE = 'CABLE Output (VB-Audio Virtual Cable)';
 
 export async function routeSpotifyOutputFromDesktop(): Promise<AudioRouteResult> {
   const audio = loadAudioSettings();

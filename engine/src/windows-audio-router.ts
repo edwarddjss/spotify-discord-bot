@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { normalizeRouterDeviceName, playbackDeviceFromCapture } from './audio-device-names.js';
 
 export interface AudioRouteResult {
   ok: boolean;
@@ -259,6 +260,13 @@ namespace Greenroom {
         : "Spotify audio was restored. " + RouteSummary(processChanged, registryChanged, verifiedProcesses, registryVerified);
     }
 
+    private static bool NameMatches(string friendlyName, string targetName) {
+      if (String.IsNullOrWhiteSpace(friendlyName) || String.IsNullOrWhiteSpace(targetName)) return false;
+      if (friendlyName.IndexOf(targetName, StringComparison.OrdinalIgnoreCase) >= 0) return true;
+      if (targetName.IndexOf(friendlyName, StringComparison.OrdinalIgnoreCase) >= 0) return true;
+      return false;
+    }
+
     private static DeviceInfo FindRenderDevice(string containsName) {
       DeviceInfo fallback = null;
       using (RegistryKey render = Registry.LocalMachine.OpenSubKey(RenderDevicesKey)) {
@@ -271,7 +279,7 @@ namespace Greenroom {
               ReadRegistryString(props.GetValue("{a45c254e-df1c-4efd-8020-67d146a850e0},2")) ??
               ReadRegistryString(props.GetValue("{a45c254e-df1c-4efd-8020-67d146a850e0},14")) ??
               "";
-            if (friendlyName.IndexOf(containsName, StringComparison.OrdinalIgnoreCase) < 0) continue;
+            if (!NameMatches(friendlyName, containsName)) continue;
 
             DeviceInfo info = DeviceInfoFromRegistry(childName, props);
             if (IsActiveDevice(device)) return info;
@@ -511,22 +519,24 @@ function isDisabled(): boolean {
   return (process.env.GREENROOM_AUDIO_ROUTING ?? '').toLowerCase() === 'false';
 }
 
-function playbackDeviceName(captureDeviceName: string): string {
-  const override = process.env.GREENROOM_SPOTIFY_OUTPUT_DEVICE ?? process.env.SPOTICORD_SPOTIFY_OUTPUT_DEVICE;
-  if (override) return override;
-  return captureDeviceName.replace(/CABLE Output/i, 'CABLE Input');
-}
-
 function restoreDeviceName(): string {
   return process.env.GREENROOM_SPOTIFY_RESTORE_DEVICE ?? process.env.SPOTICORD_SPOTIFY_RESTORE_DEVICE ?? '__greenroom_previous__';
 }
 
+function playbackDeviceName(captureDeviceName: string): string {
+  const override = process.env.GREENROOM_SPOTIFY_OUTPUT_DEVICE ?? process.env.SPOTICORD_SPOTIFY_OUTPUT_DEVICE;
+  if (override) return normalizeRouterDeviceName(override);
+  return playbackDeviceFromCapture(captureDeviceName);
+}
+
 function resolvePlaybackDeviceName(captureDeviceName: string, options: AudioRouterOptions): string {
-  return options.routeDeviceName ?? playbackDeviceName(captureDeviceName);
+  const name = options.routeDeviceName ?? playbackDeviceName(captureDeviceName);
+  return normalizeRouterDeviceName(name);
 }
 
 function resolveRestoreDeviceName(options: AudioRouterOptions): string {
-  return options.restoreDeviceName ?? restoreDeviceName();
+  const name = options.restoreDeviceName ?? restoreDeviceName();
+  return name === '__greenroom_previous__' ? name : normalizeRouterDeviceName(name);
 }
 
 function routerDataDir(options: AudioRouterOptions): string {

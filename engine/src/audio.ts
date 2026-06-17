@@ -3,6 +3,7 @@ import { PassThrough, type Readable } from 'node:stream';
 import { createAudioResource, StreamType, type AudioResource } from '@discordjs/voice';
 import { config } from './config.js';
 import { emitHealth } from './health.js';
+import { normalizeFfmpegCaptureDevice } from './audio-device-names.js';
 import type { AudioEffects } from './types.js';
 
 const DEFAULT_EFFECTS: AudioEffects = { bassboost: false, speed: 1.0 };
@@ -34,7 +35,7 @@ class AudioCaptureEngine {
     }
 
     const platform = config.audioPlatform;
-    const device = deviceName ?? config.audioDevice;
+    const device = normalizeFfmpegCaptureDevice(deviceName ?? config.audioDevice);
 
     // Ultra-low-latency resample + volume, with optional bass/atempo effects.
     let filterChain = 'aresample=48000:async=1,volume=0.95';

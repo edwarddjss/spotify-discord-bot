@@ -1,9 +1,10 @@
 import { spawn } from 'node:child_process';
 import type { AudioDeviceChoice, AudioDeviceReport } from '@greenroom/shared';
+import { DEFAULT_CAPTURE_DEVICE, DEFAULT_ROUTE_DEVICE, normalizeFfmpegCaptureDevice } from '@greenroom/shared';
 import { loadAudioSettings } from './vault';
 
-const DEFAULT_CAPTURE_DEVICE = 'CABLE Output (VB-Audio Virtual Cable)';
-const DEFAULT_ROUTE_DEVICE = 'CABLE Input (VB-Audio Virtual Cable)';
+const DEFAULT_CAPTURE_DEVICE_LEGACY = DEFAULT_CAPTURE_DEVICE;
+const DEFAULT_ROUTE_DEVICE_LEGACY = DEFAULT_ROUTE_DEVICE;
 
 interface PsDevice {
   id?: string;
@@ -131,8 +132,10 @@ function pickRestoreDevice(render: AudioDeviceChoice[], routeDevice: string): st
 export async function getAudioDeviceReport(): Promise<AudioDeviceReport> {
   const { render, capture } = await scanWindowsDevices();
   const saved = loadAudioSettings();
-  const routeDevice = saved.routeDevice || pickDevice(render, /CABLE (Input|In)\b|VB-Audio Virtual Cable/i) || DEFAULT_ROUTE_DEVICE;
-  const captureDevice = saved.captureDevice || pickDevice(capture, /CABLE (Output|Out)\b|VB-Audio Virtual Cable/i) || DEFAULT_CAPTURE_DEVICE;
+  const routeDevice = saved.routeDevice || pickDevice(render, /CABLE (Input|In)\b|VB-Audio Virtual Cable/i) || DEFAULT_ROUTE_DEVICE_LEGACY;
+  const captureDevice = normalizeFfmpegCaptureDevice(
+    saved.captureDevice || pickDevice(capture, /CABLE (Output|Out)\b|VB-Audio Virtual Cable/i) || DEFAULT_CAPTURE_DEVICE_LEGACY,
+  );
   const savedRestoreDevice = saved.restoreDevice && !isVirtualCable(saved.restoreDevice) ? saved.restoreDevice : '';
   const restoreDevice = savedRestoreDevice || pickRestoreDevice(render, routeDevice);
 
