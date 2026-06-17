@@ -13,7 +13,7 @@ import { HEALTH_MARKER } from '@greenroom/engine/health';
 import { engineEntry } from './paths';
 import { loadCreds } from './vault';
 import { buildEngineEnv } from './engine-env';
-import { restoreSpotifyOutputFromDesktop, routeSpotifyOutputFromDesktop } from './audio-routing';
+import { restoreSpotifyOutputFromDesktop } from './audio-routing';
 
 interface SupervisorCallbacks {
   onState: (snapshot: EngineSnapshot) => void;
@@ -96,14 +96,6 @@ export class Supervisor {
     this.redactList = [creds.discordToken, creds.spotifyClientSecret].filter(Boolean);
 
     const env = buildEngineEnv(creds);
-    // Route Spotify onto VB-Cable before the engine starts. Surface failures so a
-    // non-technical user sees why Discord might be silent, rather than failing mutely.
-    const route = await routeSpotifyOutputFromDesktop().catch(
-      (err: unknown): { ok: boolean; message: string } => ({ ok: false, message: (err as Error)?.message ?? 'Unknown error.' }),
-    );
-    if (!route.ok) {
-      this.emitRoutingLog(`[AudioRouting] Could not route Spotify automatically: ${route.message}`);
-    }
 
     const child = utilityProcess.fork(engineEntry(), [], { stdio: 'pipe', env });
     this.child = child;

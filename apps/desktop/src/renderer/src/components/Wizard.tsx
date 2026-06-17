@@ -230,8 +230,13 @@ export function Wizard({ onDone }: { onDone: () => void }): JSX.Element {
   const back = (): void => setStepIdx((i) => Math.max(0, i - 1));
   const startTunnel = async (): Promise<void> => {
     setTunnelBusy(true);
-    setTunnel(await api.tunnelStart());
-    setTunnelBusy(false);
+    try {
+      setTunnel(await api.tunnelStart());
+    } catch (err) {
+      setTunnel({ running: false, error: err instanceof Error ? err.message : 'Could not create the public Spotify redirect.' });
+    } finally {
+      setTunnelBusy(false);
+    }
   };
   const copyText = async (value: string | undefined): Promise<void> => {
     if (!value) return;
@@ -241,10 +246,14 @@ export function Wizard({ onDone }: { onDone: () => void }): JSX.Element {
     setAudioReport(await api.audioDevicesList());
   };
   const saveAudio = async (patch: Partial<AudioDeviceSettings>): Promise<void> => {
+    const previous = audioReport;
     setAudioSaving(true);
+    setAudioReport((prev) => (prev ? { ...prev, settings: { ...prev.settings, ...patch } } : prev));
     try {
       const settings = await api.audioDevicesSave(patch);
       setAudioReport((prev) => (prev ? { ...prev, settings } : prev));
+    } catch {
+      setAudioReport(previous);
     } finally {
       setAudioSaving(false);
     }

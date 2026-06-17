@@ -68,42 +68,52 @@ export function SettingsModal({
   const saveDiscord = async (): Promise<void> => {
     setBusy('discord');
     setDiscordResult(null);
-    const result = await api.validateDiscord(discordToken, discordClientId);
-    if (result.ok) {
-      await api.credsSave({ discordToken, discordClientId });
-      setCredsSummary((prev) => prev.replace('Discord missing', 'Discord set'));
-      setCredsStatus(await api.credsStatus());
-      setSavedInviteUrl(botInviteUrl(discordClientId));
-      setDiscordToken('');
-      setDiscordClientId('');
-      setRevealedCreds(null);
-      setRevealedFields({});
-      setReplacingDiscord(false);
-      showToast('ok', 'Discord credentials saved.');
-    } else {
-      setDiscordResult(result);
+    try {
+      const result = await api.validateDiscord(discordToken, discordClientId);
+      if (result.ok) {
+        await api.credsSave({ discordToken, discordClientId });
+        setCredsSummary((prev) => prev.replace('Discord missing', 'Discord set'));
+        setCredsStatus(await api.credsStatus());
+        setSavedInviteUrl(botInviteUrl(discordClientId));
+        setDiscordToken('');
+        setDiscordClientId('');
+        setRevealedCreds(null);
+        setRevealedFields({});
+        setReplacingDiscord(false);
+        showToast('ok', 'Discord credentials saved.');
+      } else {
+        setDiscordResult(result);
+      }
+    } catch (err) {
+      showToast('bad', err instanceof Error ? err.message : 'Could not save Discord credentials.');
+    } finally {
+      setBusy(null);
     }
-    setBusy(null);
   };
 
   const saveSpotify = async (): Promise<void> => {
     setBusy('spotify');
     setSpotifyResult(null);
-    const result = await api.validateSpotify(spotifyClientId, spotifyClientSecret);
-    if (result.ok) {
-      await api.credsSave({ spotifyClientId, spotifyClientSecret });
-      setCredsSummary((prev) => prev.replace('Spotify missing', 'Spotify set'));
-      setCredsStatus(await api.credsStatus());
-      setSpotifyClientId('');
-      setSpotifyClientSecret('');
-      setRevealedCreds(null);
-      setRevealedFields({});
-      setReplacingSpotify(false);
-      showToast('ok', 'Spotify credentials saved.');
-    } else {
-      setSpotifyResult(result);
+    try {
+      const result = await api.validateSpotify(spotifyClientId, spotifyClientSecret);
+      if (result.ok) {
+        await api.credsSave({ spotifyClientId, spotifyClientSecret });
+        setCredsSummary((prev) => prev.replace('Spotify missing', 'Spotify set'));
+        setCredsStatus(await api.credsStatus());
+        setSpotifyClientId('');
+        setSpotifyClientSecret('');
+        setRevealedCreds(null);
+        setRevealedFields({});
+        setReplacingSpotify(false);
+        showToast('ok', 'Spotify credentials saved.');
+      } else {
+        setSpotifyResult(result);
+      }
+    } catch (err) {
+      showToast('bad', err instanceof Error ? err.message : 'Could not save Spotify credentials.');
+    } finally {
+      setBusy(null);
     }
-    setBusy(null);
   };
 
   const installCable = async (): Promise<void> => {
@@ -153,11 +163,16 @@ export function SettingsModal({
   };
 
   const saveAudio = async (patch: Partial<AudioDeviceSettings>): Promise<void> => {
+    const previous = audioReport;
     setAudioSaving(true);
+    setAudioReport((prev) => (prev ? { ...prev, settings: { ...prev.settings, ...patch } } : prev));
     try {
       const settings = await api.audioDevicesSave(patch);
       setAudioReport((prev) => (prev ? { ...prev, settings } : prev));
       showToast('ok', 'Audio routing saved.');
+    } catch (err) {
+      setAudioReport(previous);
+      showToast('bad', err instanceof Error ? err.message : 'Could not save audio routing.');
     } finally {
       setAudioSaving(false);
     }
@@ -186,8 +201,13 @@ export function SettingsModal({
 
   const openSupportIssue = async (): Promise<void> => {
     setSupportMessage(null);
+    showToast('ok', 'Opening support draft...');
     const result = await api.diagnosticsIssue();
-    setSupportMessage(result.ok ? 'Email draft opened with the report filled in.' : (result.error ?? 'Could not open support.'));
+    if (result.ok) {
+      showToast('ok', 'Support draft opened.');
+    } else {
+      showToast('bad', result.error ?? 'Could not open support.');
+    }
   };
 
   return (

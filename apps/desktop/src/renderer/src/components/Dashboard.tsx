@@ -175,6 +175,32 @@ export function Dashboard(): JSX.Element {
     }
   };
 
+  const failMessage = (err: unknown, fallback: string): string => (err instanceof Error && err.message ? err.message : fallback);
+
+  const startBot = async (): Promise<void> => {
+    const previous = snapshotRef.current;
+    const withoutError = { ...previous };
+    delete withoutError.lastError;
+    applySnapshot({ ...withoutError, state: 'starting' });
+    try {
+      applySnapshot(await api.engineStart());
+    } catch (err) {
+      applySnapshot({ ...previous, lastError: failMessage(err, 'Could not start the bot.') });
+    }
+  };
+
+  const stopBot = async (): Promise<void> => {
+    const previous = snapshotRef.current;
+    const withoutError = { ...previous };
+    delete withoutError.lastError;
+    applySnapshot({ ...withoutError, state: 'stopping' });
+    try {
+      applySnapshot(await api.engineStop());
+    } catch (err) {
+      applySnapshot({ ...previous, lastError: failMessage(err, 'Could not stop the bot.') });
+    }
+  };
+
   useEffect(() => {
     void api.engineGetSnapshot().then(applySnapshot);
     void api.prereqsScan();
@@ -256,12 +282,12 @@ export function Dashboard(): JSX.Element {
             Settings
           </Button>
           {running ? (
-            <Button variant="danger" onClick={() => void api.engineStop().then(applySnapshot)}>
+            <Button variant="danger" disabled={transitioning} onClick={() => void stopBot()}>
               <Icon name="stop" size={15} />
               Stop
             </Button>
           ) : (
-            <Button onClick={() => void api.engineStart().then(applySnapshot)}>
+            <Button disabled={transitioning} onClick={() => void startBot()}>
               <Icon name="rocket" size={16} />
               Start bot
             </Button>

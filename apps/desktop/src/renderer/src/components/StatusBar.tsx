@@ -1,9 +1,16 @@
+import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { useUpdater } from '../lib/useUpdater';
 
 export function StatusBar(): JSX.Element {
-  const update = useUpdater();
+  const updaterStatus = useUpdater();
+  const [checkingNow, setCheckingNow] = useState(false);
+  const update = checkingNow && updaterStatus.phase === 'idle' ? { ...updaterStatus, phase: 'checking' as const } : updaterStatus;
   const version = update.currentVersion ? `v${update.currentVersion}` : '';
+
+  useEffect(() => {
+    if (updaterStatus.phase !== 'idle') setCheckingNow(false);
+  }, [updaterStatus.phase]);
 
   const label = (() => {
     switch (update.phase) {
@@ -25,7 +32,15 @@ export function StatusBar(): JSX.Element {
   })();
 
   const disabled = !update.supported || update.phase === 'checking' || update.phase === 'available' || update.phase === 'downloading';
-  const action = update.phase === 'downloaded' ? api.updaterInstall : api.updaterCheck;
+  const checkForUpdates = async (): Promise<void> => {
+    setCheckingNow(true);
+    try {
+      await api.updaterCheck();
+    } finally {
+      setCheckingNow(false);
+    }
+  };
+  const action = update.phase === 'downloaded' ? api.updaterInstall : checkForUpdates;
 
   return (
     <footer className="app-no-drag flex h-8 shrink-0 items-center justify-end border-t border-line bg-bg px-4">

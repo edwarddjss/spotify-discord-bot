@@ -133,12 +133,12 @@ export class VoiceSessionManager {
     this.cleanupInProgress = false;
   }
 
-  async routeSpotifyAudio(captureDeviceName = this.config.audioDevice): Promise<void> {
-    if (this.spotifyAudioRouted) return;
+  async routeSpotifyAudio(captureDeviceName = this.config.audioDevice, force = false): Promise<void> {
+    if (this.spotifyAudioRouted && !force) return;
     if (this.spotifyRouteInFlight) return this.spotifyRouteInFlight;
 
     this.spotifyRouteInFlight = (async () => {
-      const route = await routeSpotifyToCapture(captureDeviceName);
+      const route = await routeSpotifyToCapture(captureDeviceName, { dataDir: this.config.dataDir });
       if (route.ok) {
         if (!route.skipped) this.spotifyAudioRouted = true;
         console.log(`[AudioRouting] ${route.message}`);
@@ -161,7 +161,7 @@ export class VoiceSessionManager {
 
     this.spotifyAudioRouted = false;
     this.spotifyRestoreInFlight = (async () => {
-      const result = await restoreSpotifyOutput(this.config.audioDevice);
+      const result = await restoreSpotifyOutput(this.config.audioDevice, { dataDir: this.config.dataDir });
       if (result.ok) console.log(`[AudioRouting] ${result.message}`);
       else console.warn(`[AudioRouting] Could not restore Spotify audio: ${result.message}`);
     })();
@@ -296,16 +296,22 @@ export class VoiceSessionManager {
     throw new Error(readableVoiceConnectError(lastError));
   }
 
+  async routeSpotifyAudioForUser(spotifyUserId: string): Promise<string> {
+    const targetDevice = this.spotify.getUserAudioDevice(spotifyUserId) ?? this.config.audioDevice;
+    await this.routeSpotifyAudio(targetDevice, true);
+    return targetDevice;
+  }
+
   async startCapture(spotifyUserId: string): Promise<CaptureHandle> {
     const targetDevice = this.spotify.getUserAudioDevice(spotifyUserId) ?? this.config.audioDevice;
-    await this.routeSpotifyAudio(targetDevice);
+    await this.routeSpotifyAudioForUser(spotifyUserId);
     const handle = this.audioEngine.start(targetDevice, this.activeEffects);
     this.audioPlayer.play(handle.resource);
     this.activeSpotifyUserId = spotifyUserId;
     return handle;
   }
 
-  async ensureVoiceConnection(member: GuildMember, guild: Guild, spotifyUserId: string): Promise<VoiceBasedChannel> {
+  async ensureVoiceConnection(member: GuildMember, guild: Guild, spotifyUserId: string, startAudio = true): Promise<VoiceBasedChannel> {
     const voiceChannel = member.voice.channel;
     if (!voiceChannel) {
       throw new Error('You must be in a voice channel to use this command!');
@@ -318,7 +324,7 @@ export class VoiceSessionManager {
       this.voiceConnection.state.status === VoiceConnectionStatus.Ready;
 
     if (healthy) {
-      if (!this.audioEngine.isActive()) await this.startCapture(spotifyUserId);
+      if (startAudio && !this.audioEngine.isActive()) await this.startCapture(spotifyUserId);
       return voiceChannel;
     }
 
@@ -341,7 +347,7 @@ export class VoiceSessionManager {
     await this.maximizeBitrate(voiceChannel, guild);
 
     this.activeEffects = { bassboost: false, speed: 1.0 };
-    await this.startCapture(spotifyUserId);
+    if (startAudio) await this.startCapture(spotifyUserId);
 
     return voiceChannel;
   }

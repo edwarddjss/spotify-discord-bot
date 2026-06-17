@@ -1,6 +1,6 @@
 {
   "name": "@greenroom/desktop",
-  "version": "0.1.28",
+  "version": "0.1.29",
   "private": true,
   "description": "greenroom desktop client (Electron) for Windows",
   "main": "out/main/index.js",

@@ -87,6 +87,23 @@ async function replyEphemeral(cmd: ChatInputCommandInteraction, content: string)
   await cmd.reply({ content, flags: MessageFlags.Ephemeral });
 }
 
+/** Join voice, route Spotify to the virtual cable, and rebind playback onto that output. */
+async function prepareVoiceStreaming(
+  member: NonNullable<ChatInputCommandInteraction<'cached'>['member']>,
+  guild: ChatInputCommandInteraction<'cached'>['guild'],
+  spotifyUserId: string,
+): Promise<void> {
+  await voiceSession.ensureVoiceConnection(member, guild, spotifyUserId, false);
+  await voiceSession.routeSpotifyAudioForUser(spotifyUserId);
+  const device = await spotify.findTargetDevice(spotifyUserId);
+  await spotify.resumeOnRoutedDevice(spotifyUserId, device?.id ?? null);
+}
+
+async function startDiscordCapture(spotifyUserId: string): Promise<void> {
+  const capture = await voiceSession.startCapture(spotifyUserId);
+  await capture.readyPromise;
+}
+
 async function handleInteractionFailure(cmd: ChatInputCommandInteraction, err: unknown): Promise<void> {
   const message = (err as Error).message || 'Unknown error';
   console.error('[Bot] Interaction failed:', message);
@@ -141,15 +158,15 @@ client.on('interactionCreate', (interaction) => {
         await cmd.deferReply();
         try {
           await cmd.editReply('Joining your voice channel...');
-          const voiceChannel = await voiceSession.ensureVoiceConnection(member, guild, userId);
+          const voiceChannel = await voiceSession.ensureVoiceConnection(member, guild, userId, false);
           let playError: string | null = null;
           let targetDeviceName = 'your active device';
           try {
+            await cmd.editReply('Routing Spotify audio to Discord...');
+            await prepareVoiceStreaming(member, guild, userId);
             const device = await spotify.findTargetDevice(userId);
             if (device) targetDeviceName = device.name;
-            // Rebind Spotify's output onto the just-routed VB-Cable endpoint. A plain
-            // resume would no-op on an already-playing client and stay on speakers.
-            await spotify.resumeOnRoutedDevice(userId, device?.id ?? null);
+            await startDiscordCapture(userId);
           } catch (err) {
             console.warn('[Bot] Auto-resume failed (voice still active):', (err as Error).message);
             playError = (err as Error).message;
@@ -243,7 +260,6 @@ client.once('clientReady', () => {
   const tag = client.user?.tag ?? 'unknown';
   console.log(`\x1b[32m[Discord] Logged in as ${tag}!\x1b[0m`);
   emitHealth('discord_ready', { tag });
-  void voiceSession.routeSpotifyAudio();
   void syncPlaybackPresence();
   setInterval(() => void syncPlaybackPresence(), PRESENCE_SYNC_INTERVAL_MS);
   const profilesCount = Object.keys(spotify.profiles).length;
@@ -307,8 +323,9 @@ client.on('messageCreate', (message: Message) => {
 
         const autoPlayMsg = await message.reply(`Spinning **${resolvedDisplayName}**'s playlist matching "${pending.targetQuery}"...`);
         try {
-          if (message.member) await voiceSession.ensureVoiceConnection(message.member, message.guild, spotifyUserId);
+          if (message.member) await prepareVoiceStreaming(message.member, message.guild, spotifyUserId);
           const result = await spotify.playUserPlaylist(spotifyUserId, resolvedUserId, pending.targetQuery);
+          if (message.member) await startDiscordCapture(spotifyUserId);
           await autoPlayMsg.edit(`Playing **${result.playlistName}** by **${resolvedDisplayName}** on **${result.deviceName}**.`);
           refreshPlaybackPresence();
           setTimeout(() => void autoPlayMsg.delete().catch(() => {}), 5000);
@@ -429,8 +446,9 @@ client.on('messageCreate', (message: Message) => {
       }
       const loadingMsg = await message.reply(`Fetching **${resolved.spotifyDisplayName}**'s playlist matching "${targetQuery}"...`);
       try {
-        if (message.member) await voiceSession.ensureVoiceConnection(message.member, message.guild, spotifyUserId);
+        if (message.member) await prepareVoiceStreaming(message.member, message.guild, spotifyUserId);
         const result = await spotify.playUserPlaylist(spotifyUserId, resolved.spotifyUserId, targetQuery);
+        if (message.member) await startDiscordCapture(spotifyUserId);
         await loadingMsg.edit(`Playing **${result.playlistName}** by **${resolved.spotifyDisplayName}** on **${result.deviceName}**.`);
         refreshPlaybackPresence();
       } catch (err) {
@@ -447,7 +465,7 @@ client.on('messageCreate', (message: Message) => {
       }
       const loadingMsg = await message.reply('Searching Spotify...');
       try {
-        if (message.member) await voiceSession.ensureVoiceConnection(message.member, message.guild, spotifyUserId);
+        if (message.member) await prepareVoiceStreaming(message.member, message.guild, spotifyUserId);
         const reference = extractSpotifyReference(playQuery);
         let result;
         if (reference) {
@@ -459,6 +477,7 @@ client.on('messageCreate', (message: Message) => {
         } else {
           result = await spotify.searchAndPlay(spotifyUserId, playQuery);
         }
+        if (message.member) await startDiscordCapture(spotifyUserId);
         await loadingMsg.edit(`Playing **${result.matchName}** on **${result.deviceName}**.`);
         refreshPlaybackPresence();
         setTimeout(() => void loadingMsg.delete().catch(() => {}), 5000);
