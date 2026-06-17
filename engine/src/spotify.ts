@@ -275,6 +275,11 @@ export class SpotifyController extends EventEmitter {
     console.log(`[Spotify] Token refreshed for ${discordUserId}`);
   }
 
+  /** Pause/play/transfer often return 204 or 200 with an empty or opaque body — not JSON. */
+  private isJsonOptionalPlayerCommand(context: string): boolean {
+    return /^(PUT|POST) \/me\/player/.test(context);
+  }
+
   private async readSpotifyResponse<T>(response: Awaited<ReturnType<typeof fetch>>, context: string): Promise<T | null> {
     if (response.status === 204) return null;
     const text = await response.text();
@@ -292,6 +297,7 @@ export class SpotifyController extends EventEmitter {
     try {
       return JSON.parse(text) as T;
     } catch {
+      if (this.isJsonOptionalPlayerCommand(context)) return null;
       const hint = /^[A-Za-z0-9+/=]{8,}$/.test(text.trim())
         ? ' The response looked like corrupted credentials — run /login in Discord to relink Spotify.'
         : '';
